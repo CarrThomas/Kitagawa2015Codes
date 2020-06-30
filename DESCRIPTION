@@ -1,11 +1,14 @@
 Package: TestforInstrumentValidity
 Type: Package
-Title: What the Package Does (Title Case)
+Title: A Test for Instrument Validity
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Authors@R: c(person("Thomas", "Carr", role = c("aut", "cre"), email = "t.carr@ucl.ac.uk"),
+              person("Toru", "Kitagawa", role = "aut", email = "t.kitagawa@ucl.ac.uk")
+Author: Thomas Carr [aut, cre], 
+    Toru Kitagawa [aut]
+Maintainer: Thomas Carr <t.carr@ucl.ac.uk>
+Description: A package implementing the test for instrument validity with conditioning covariates described in Kitagawa
+    (2015). Also included are replication files for that paper.
+License: GPL (>=2)
 Encoding: UTF-8
 LazyData: true

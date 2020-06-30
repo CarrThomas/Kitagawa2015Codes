@@ -1,1 +1,2 @@
 exportPattern("^[[:alpha:]]+")
+export(Z_validity_test)
