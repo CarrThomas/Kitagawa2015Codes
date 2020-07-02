@@ -3,7 +3,7 @@ Type: Package
 Title: A Test for Instrument Validity
 Version: 0.1.0
 Authors@R: c(person("Thomas", "Carr", role = c("aut", "cre"), email = "t.carr@ucl.ac.uk"),
-              person("Toru", "Kitagawa", role = "aut", email = "t.kitagawa@ucl.ac.uk")
+              person("Toru", "Kitagawa", role = "aut", email = "t.kitagawa@ucl.ac.uk"))
 Author: Thomas Carr [aut, cre], 
     Toru Kitagawa [aut]
 Maintainer: Thomas Carr <t.carr@ucl.ac.uk>
