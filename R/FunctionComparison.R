@@ -345,10 +345,202 @@ new_method_2 <- function(data, incumbent){
 
 }
 
+# New method 3: consider all possible intervals at once. At each iteration, find
+# the minimum bound. If this is above the incumbent, terminate. Otherwise, call
+# Kadane. If the fitst-state result is above the current minimum, apply Kadane
+# iteratively until convergence, then move onto another point
+new_method_3 <- function(data, incumbent){
+
+  intervals <- get_intervals(data)
+
+  neg_sum <- cumsum(intervals[seq.int(1, nrow(intervals), 2), 1])
+  pos_sum <- cumsum(intervals[seq.int(nrow(intervals) - 1, 2, -2), 1])
+  pos_sum <- c(pos_sum[length(pos_sum):1], 0)
+
+  alt_neg_sum <- cumsum(intervals[seq.int(nrow(intervals), 1, -2), 1])
+  alt_neg_sum <- rev(alt_neg_sum)
+
+  n <- length(neg_sum)
+
+  bounds <- matrix(neg_sum, n, n, byrow = T) -
+    matrix(c(0, neg_sum[1:(n - 1)]), n, n)
+  bounds[lower.tri(bounds)] <- 0
+
+  # initialize
+  kadane_count <- 1
+  flag <- 0
+
+  start_time <- Sys.time()
+
+  while(flag == 0){
+
+    i <- which.min(bounds)
+    col <- floor(i / n) + 1
+    row <- i - (col - 1) * n
+
+    if (bounds[row, col] < incumbent){
+
+      stage <- oneD_iteration(data, intervals, pos_sum, neg_sum, alt_neg_sum, row,
+                              col, n, kadane_count, incumbent, bounds)
+
+      bounds <- stage$bounds
+      kadane_count <- stage$kadane_count
+      incumbent <- stage$incumbent
+
+    }else{
+
+      flag <- 1
+
+    }
+
+  }
+
+  end_time <- Sys.time()
+
+  return(list(incumbent = incumbent,
+              bounds = bounds,
+              kadane_count = kadane_count,
+              run_time = end_time - start_time))
+
+}
+
+
+update_bounds <- function(bounds, candidate, pos_sum, neg_sum, alt_neg_sum, row, col, n){
+
+  # function to update bounds
+  new_bounds <- matrix(0, n, n)
+
+  if (col > 1){
+    new_bounds[row, ] <- candidate + c(- pos_sum[1:(col - 1)] + pos_sum[col],
+                                       neg_sum[col:n] - neg_sum[col])
+  }else{
+    new_bounds[row, ] <- candidate + neg_sum[col:n] - neg_sum[col]
+  }
+  # update other rows
+  if (row > 1){
+    new_bounds[1:(row - 1), ] <-
+      matrix(new_bounds[row, ], row - 1, n, byrow = T) +
+      matrix(alt_neg_sum[1:(row - 1)], row - 1, n) - alt_neg_sum[row]
+  }
+  if (row < n){
+    new_bounds[(row + 1):n, ] <-
+      matrix(new_bounds[row, ], n - row, n, byrow = T) -
+      pos_sum[row] + matrix(pos_sum[(row + 1):n], (n - row), n)
+  }
+
+  bounds <- pmax(bounds, new_bounds)
+
+  return(bounds)
+
+}
+
+solve_given_row_col <- function(data, intervals, row, col){
+
+  data[intervals[2 * row - 1, 2]:intervals[(2 * col) - 1, 3], 5] <- 1
+  data[data[, 2], ] <- data
+  results <- kadane_2(subset(data, data[, 5] == 1)[, 3])
+  start <- data[results$start, 2]
+  end <- data[results$end, 2]
+
+  return(list(val = results$val, start = start, end = end))
+
+}
+
+get_next_row_col <- function(data, results){
+
+  data[data[, 2], ] <- data
+  data[results$start:results$end, 5] <- 1
+  data[data[, 1], ] <- data
+  data <- subset(data, data[, 5] == 1)
+  temp <- kadane_2(data[, 3])
+
+  row <- 1 + (data[temp$start, 6] - 1) / 2
+  col <- 1 + (data[temp$end, 6] - 1) / 2
+
+  return(list(row = row, col = col))
+
+}
+
+# iterates by one dimenionsal kadane through to convergence
+oneD_iteration <- function(data, intervals, pos_sum, neg_sum, alt_neg_sum,
+                           row, col, n, kadane_count, incumbent, bounds){
+
+  flag <- 0
+
+  while(flag == 0){
+
+    kadane_count <- kadane_count + 1
+
+    # given this choice of row and column, solve for the y interval
+    results <- solve_given_row_col(data, intervals, row, col)
+
+    # update bounds
+    bounds <-
+      update_bounds(bounds, results$val, pos_sum, neg_sum, alt_neg_sum, row, col, n)
+
+    if (results$val > incumbent){
+
+      flag <- 1
+
+    }else{
+
+      incumbent <- results$val
+
+      # get the next interval for which we want to solve
+      new <- get_next_row_col(data, results)
+      new_row <- new$row
+      new_col <- new$col
+
+      if(row == new_row & col == new_col){
+        flag <- 1
+      }else{
+        row <- new_row
+        col <- new_col
+      }
+    }
+
+  }
+
+  return(list(bounds = bounds,
+              incumbent = incumbent,
+              kadane_count = kadane_count))
+
+}
+
+data_prep <- function(data){
+
+  # indicator for negative values
+  data <- cbind(data, rep(0, nrow(data)))
+  names(data)[5] <- "inclusion"
+
+  # get intervals for x
+  data[data[, 1], ] <- data
+  ind <- c(1, data[2:nrow(data), 4] != data[1:(nrow(data) - 1), 4])
+  bot <- subset(data[, 1], ind == 1)
+  top <- subset(data[, 1], c(ind[2:length(ind)], 1) == 1)
+  ind <- cumsum(ind)
+  data <- cbind(data, ind)
+  names(data)[6] <- "x_interval"
+
+  # get intervals for y
+  data[data[, 2], ] <- data
+  ind <- c(1, data[2:nrow(data), 4] != data[1:(nrow(data) - 1), 4])
+  bot <- subset(data[, 1], ind == 1)
+  top <- subset(data[, 1], c(ind[2:length(ind)], 1) == 1)
+  ind <- cumsum(ind)
+  data <- cbind(data, ind)
+  names(data)[7] <- "y_interval"
+
+  data[data[, 1], ] <- data
+
+  return(data)
+
+}
+
 ################################ GENERATE DATA #################################
 
 # number of observations
-N <- 200
+N <- 1000
 
 # draw parameters
 B <- runif(1, -1, 1)
@@ -431,16 +623,17 @@ true_solution <- min(exhaustive0$true_vals, exhaustive1$true_vals)
 ############################# STARTING VALUE 1 RUNS ############################
 
 # get starting value by optimisation over a single dimension
-incumbent <- rep(0, 4)
-for (k in 1:2){
-  data0[data0[, 3 - k], ] <- data0
-  incumbent[k] <- kadane(data0[, 3])
-}
-for (k in 1:2){
-  data1[data1[, 3 - k], ] <- data1
-  incumbent[k + 2] <- kadane(data1[, 3])
-}
-incumbent <- min(incumbent)
+# incumbent <- rep(0, 4)
+# for (k in 1:2){
+#   data0[data0[, 3 - k], ] <- data0
+#   incumbent[k] <- kadane(data0[, 3])
+# }
+# for (k in 1:2){
+#   data1[data1[, 3 - k], ] <- data1
+#   incumbent[k + 2] <- kadane(data1[, 3])
+# }
+# incumbent <- min(incumbent)
+incumbent <- 0
 
 # different optimisers
 august2019_0 <- august2019algo(data0, incumbent)
@@ -458,27 +651,39 @@ new_method_2_D1 <- new_method_2(data1, new_method_2_D0$incumbent)
 
 new_method_2_solution <- new_method_2_D1$incumbent
 
+data0 <- data_prep(data0)
+data1 <- data_prep(data1)
+
+new_method_3_D0 <- new_method_3(data0, incumbent)
+new_method_3_D1 <- new_method_3(data1, new_method_3_D0$incumbent)
+
+new_method_3_solution <- new_method_3_D1$incumbent
+
 ################################## COMPARISONS #################################
 
 # comparison of solutions
 solutions <- c(true_solution, august2019_solution, new_method_1_solution,
-               new_method_2_solution)
+               new_method_2_solution, new_method_3_solution)
 solutions
 
 # comparison of run times
 run_times_D0 <- c(exhaustive0$run_time, august2019_0$run_time,
-                  new_method_1_D0$run_time, new_method_2_D0$run_time)
+                  new_method_1_D0$run_time, new_method_2_D0$run_time,
+                  new_method_3_D0$run_time)
 
 run_times_D1 <- c(exhaustive1$run_time, august2019_1$run_time,
-                  new_method_1_D1$run_time, new_method_2_D1$run_time)
+                  new_method_1_D1$run_time, new_method_2_D1$run_time,
+                  new_method_3_D1$run_time)
 
 
 # comparison of Kadane calls
 kadane_calls_D0 <- c(exhaustive0$kadane_count, august2019_0$kadane_count,
-                     new_method_1_D0$kadane_count, new_method_2_D0$kadane_count)
+                     new_method_1_D0$kadane_count, new_method_2_D0$kadane_count,
+                     new_method_3_D0$kadane_count)
 
 kadane_calls_D1 <- c(exhaustive1$kadane_count, august2019_1$kadane_count,
-                     new_method_1_D1$kadane_count, new_method_2_D1$kadane_count)
+                     new_method_1_D1$kadane_count, new_method_2_D1$kadane_count,
+                     new_method_3_D1$kadane_count)
 
 # comparison of bounds for new method 2 and the true values in each interval
 bounds_check_D0 <-
@@ -488,13 +693,21 @@ bounds_check_D1 <-
   sum(round(exhaustive1$true_vals[upper.tri(exhaustive1$true_vals)], 8) <
       round(new_method_2_D1$bounds[upper.tri(new_method_2_D1$bounds)], 8))
 
+bounds_check_3_D0 <-
+  sum(round(exhaustive0$true_vals[upper.tri(exhaustive0$true_vals)], 8) <
+        round(new_method_3_D0$bounds[upper.tri(new_method_3_D0$bounds)], 8))
+bounds_check_3_D1 <-
+  sum(round(exhaustive1$true_vals[upper.tri(exhaustive1$true_vals)], 8) <
+        round(new_method_3_D1$bounds[upper.tri(new_method_3_D1$bounds)], 8))
+
+
 comparisons_starting_1 <- cbind(solutions, run_times_D0, run_times_D1,
                                 kadane_calls_D0, kadane_calls_D1,
-                                c(rep(NA, 3), bounds_check_D0),
-                                c(rep(NA, 3), bounds_check_D1))
+                                c(rep(NA, 3), bounds_check_D0, bounds_check_3_D0),
+                                c(rep(NA, 3), bounds_check_D1, bounds_check_3_D1))
 
 
-row.names(comparisons_starting_1) <- c("Exhaustive", "2019", "New 1", "New 2")
+row.names(comparisons_starting_1) <- c("Exhaustive", "2019", "New 1", "New 2", "New 3")
 colnames(comparisons_starting_1) <- c("Minimum",
                                       "Run Time D = 0",
                                       "Run Time D = 1",
@@ -503,6 +716,8 @@ colnames(comparisons_starting_1) <- c("Minimum",
                                       "Bounds Check D = 0",
                                       "Bounds Check D = 1")
 
+
+comparisons_starting_1
 
 ############################# STARTING VALUE 2 RUNS ############################
 
